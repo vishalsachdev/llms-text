@@ -233,14 +233,14 @@ def main():
     # Format the basic site map
     basic_map = group_and_format(pages, args.name)
     
-    # We don't save the basic site map by default, just use it for enhancement
-    # Uncomment the lines below if you want to save the basic map too
-    # basic_filename = "llms.txt"
-    # with open(basic_filename, "w", encoding="utf-8") as f:
-    #     f.write(basic_map)
-    # print(f"✅ Basic site map saved to {basic_filename}")
-    
-    print("✅ Generated basic site map for enhancement")
+    # If skip_enhance is true, save the basic site map as llms.txt
+    if args.skip_enhance:
+        basic_filename = "llms.txt"
+        with open(basic_filename, "w", encoding="utf-8") as f:
+            f.write(basic_map)
+        print(f"✅ Basic site map saved to {basic_filename}")
+    else:
+        print("✅ Generated basic site map for enhancement")
     
     # Enhance the site map if not skipped
     if not args.skip_enhance:
