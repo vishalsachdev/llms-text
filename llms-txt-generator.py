@@ -210,7 +210,7 @@ def enhance_site_map(basic_map, site_name, api_key):
 
 def main():
     parser = argparse.ArgumentParser(description="Create an enhanced site map for LLM context")
-    parser.add_argument("--url", type=str, help="Website URL to crawl", 
+    parser.add_argument("url", type=str, nargs="?", help="Website URL to crawl", 
                         default="https://giesbusiness.illinois.edu")
     parser.add_argument("--name", type=str, help="Site name for the output files",
                         default="Website")

@@ -75,16 +75,21 @@ The file is organized into several key components:
    
 2. Run the script with default settings:
    ```bash
-   ./enhanced_crawler.py
+   ./llms-txt-generator.py
    ```
    
-3. Or customize with options:
+3. Or provide a URL directly:
    ```bash
-   ./enhanced_crawler.py --url https://your-site.com --name "Your Site Name" --max-pages 200
+   ./llms-txt-generator.py https://your-site.com
+   ```
+   
+4. Customize with additional options:
+   ```bash
+   ./llms-txt-generator.py https://your-site.com --name "Your Site Name" --max-pages 200
    ```
 
 ### Command Line Options
-- `--url`: Website URL to crawl (default: https://giesbusiness.illinois.edu)
+- First argument (positional): Website URL to crawl (default: https://giesbusiness.illinois.edu)
 - `--name`: Site name for the output files (default: derived from URL)
 - `--max-pages`: Maximum pages to crawl (default: 150)
 - `--delay`: Delay between requests in seconds (default: 0.2)
