@@ -1,12 +1,12 @@
-# Gies College of Business - Enhanced Site Map for LLMs
+# LLMs.txt Generator - Enhanced Site Maps for LLMs
 
 ## Overview
 
-This document explains the purpose, structure, and applications of the `llms-enhanced.txt` file created for Gies College of Business. The enhanced file is a comprehensive, structured representation of the college's website content, optimized for both human readability and Large Language Model (LLM) understanding.
+This document explains the purpose, structure, and applications of the `llms.txt` file created by this generator. The enhanced file is a comprehensive, structured representation of a website's content, optimized for both human readability and Large Language Model (LLM) understanding.
 
-## What is llms-enhanced.txt?
+## What is llms.txt?
 
-`llms-enhanced.txt` is a semantically structured representation of the Gies College of Business website that:
+`llms.txt` is a semantically structured representation of a website that:
 
 1. Organizes content hierarchically by topic and section
 2. Includes descriptive metadata about each page
@@ -91,7 +91,7 @@ The file is organized into several key components:
 - `--skip-enhance`: Skip the enhancement step if you only want the basic site map
 
 ### Output Files
-- `llms-enhanced.txt`: AI-enhanced version with hierarchical structure and descriptions
+- `llms.txt`: AI-enhanced site map with hierarchical structure and descriptions
 - A basic site map is generated temporarily during processing but not saved by default
 
 ## Maintenance Recommendations

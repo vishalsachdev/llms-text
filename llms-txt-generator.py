@@ -249,7 +249,7 @@ def main():
             enhanced_map = enhance_site_map(basic_map, args.name, api_key)
             
             if enhanced_map:
-                enhanced_filename = "llms-enhanced.txt"
+                enhanced_filename = "llms.txt"
                 with open(enhanced_filename, "w", encoding="utf-8") as f:
                     f.write(enhanced_map)
                 print(f"✅ Enhanced site map saved to {enhanced_filename}")
