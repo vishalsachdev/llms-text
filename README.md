@@ -91,8 +91,8 @@ The file is organized into several key components:
 - `--skip-enhance`: Skip the enhancement step if you only want the basic site map
 
 ### Output Files
-- `llms.txt`: Basic site map with pages grouped by URL path
 - `llms-enhanced.txt`: AI-enhanced version with hierarchical structure and descriptions
+- A basic site map is generated temporarily during processing but not saved by default
 
 ## Maintenance Recommendations
 
