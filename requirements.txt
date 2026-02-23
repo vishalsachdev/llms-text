@@ -1,3 +1,8 @@
+# Core (generator + benchmark)
 requests>=2.28.0
 beautifulsoup4>=4.11.0
-argparse>=1.4.0
+
+# Benchmark tool — install at least one AI SDK:
+anthropic>=0.39.0    # pip install anthropic  (set ANTHROPIC_API_KEY)
+openai>=1.0.0        # pip install openai     (set OPENAI_API_KEY)
+# Gemini uses REST via requests — no extra SDK needed (set GOOGLE_API_KEY)
