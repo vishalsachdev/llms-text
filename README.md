@@ -1,114 +1,68 @@
-# LLMs.txt Generator - Enhanced Site Maps for LLMs
+# llms.txt for Gies College of Business
 
-## Overview
+A working implementation of the [llms.txt standard](https://llmstxt.org/) for [Gies College of Business](https://giesbusiness.illinois.edu) at the University of Illinois Urbana-Champaign.
 
-This document explains the purpose, structure, and applications of the `llms.txt` file created by this generator. The enhanced file is a comprehensive, structured representation of a website's content, optimized for both human readability and Large Language Model (LLM) understanding.
+## What's in this repo
 
-## What is llms.txt?
+| File | Purpose |
+|------|---------|
+| [`llms.txt`](llms.txt) | Compact index — key pages and programs with descriptions (~3K tokens) |
+| [`llms-full.txt`](llms-full.txt) | Comprehensive reference — all programs, AI initiatives, facilities, career resources (~5K tokens) |
+| [`llms-txt-generator.py`](llms-txt-generator.py) | Python script that crawls a website and generates an enhanced llms.txt using the Gemini API |
+| [`llms-txt-one-pager-gies.md`](llms-txt-one-pager-gies.md) | One-pager: should Gies adopt llms.txt? Research, sources, and recommendation |
 
-`llms.txt` is a semantically structured representation of a website that:
+## llms.txt format
 
-1. Organizes content hierarchically by topic and section
-2. Includes descriptive metadata about each page
-3. Provides context and relationships between different parts of the website
-4. Enhances navigation with consistent formatting and clear labels
-5. Includes structured JSON metadata for automated processing
+The files follow the [official spec](https://llmstxt.org/) proposed by Jeremy Howard (Answer.AI):
 
-## Why is this file useful?
+```
+# Site Name
 
-### For College Administrators
-- **Website Audit**: Provides a comprehensive view of site organization and content
-- **Content Management**: Identifies content gaps, overlaps, or inconsistencies
-- **Information Architecture**: Shows how website sections relate to each other
-- **Accessibility**: Makes website structure understandable at a glance
+> Blockquote summary of the site
 
-### For LLM Applications
-- **Accurate Information Retrieval**: Helps LLMs (like Claude or ChatGPT) provide accurate responses about Gies programs and services
-- **Contextual Understanding**: Enables LLMs to understand relationships between different parts of the college
-- **Enhanced Responses**: Improves the quality of AI responses to prospective students, current students, and other stakeholders
-- **Resource Optimization**: Reduces the need for LLMs to crawl the entire website repeatedly
+Optional descriptive paragraphs.
 
-### For IT and Web Teams
-- **Documentation**: Serves as living documentation of the website structure
-- **Development Planning**: Helps identify areas for website improvement
-- **SEO Enhancement**: Provides insights for improving search engine optimization
+## Section Name
 
-## How to Use the Enhanced File
+- [Page Title](https://url): Brief description of the page
 
-### For Reference and Planning
-1. **Content Audit**: Review the file to understand how your website content is currently organized
-2. **Gap Analysis**: Identify missing information or areas needing additional content
-3. **Navigation Review**: Evaluate the logical structure of your site based on the hierarchical organization
+## Optional
 
-### For AI and Chatbot Integration
-1. **Knowledge Base**: Use as a foundation document for college chatbots or virtual assistants
-2. **Training Data**: Incorporate into training materials for custom AI applications
-3. **LLM Context**: Provide to LLMs as context when asking questions about Gies College
+- [Lower-priority pages](https://url): Can be skipped for shorter context
+```
 
-### For Content Updates
-1. **Add New Programs**: Insert new offerings in the appropriate sections, following the established format
-2. **Update Information**: Modify descriptions while maintaining the hierarchical structure
-3. **Track Changes**: Compare versions over time to see how content has evolved
+When deployed, `llms.txt` lives at the website root (e.g., `giesbusiness.illinois.edu/llms.txt`) and gives AI assistants a curated map of the site's most important content.
 
-## File Structure and Features
+## Generator script
 
-The file is organized into several key components:
+The included Python script can crawl any website and produce an llms.txt file:
 
-1. **Metadata Header**: JSON block with information about the file itself
-2. **Primary Sections**: Major website areas (About, Academic Programs, Student Experience, etc.)
-3. **Hierarchical Subsections**: Nested organization of related content
-4. **Descriptive Links**: URLs with context about what each page contains
-5. **Topic-Based Index**: Cross-references content by subject rather than site structure
+```bash
+# Install dependencies
+pip install -r requirements.txt
 
-## Creating Your Own Enhanced Site Maps
+# Basic usage (crawl + Gemini enhancement)
+export GOOGLE_API_KEY=your_key
+./llms-txt-generator.py https://your-site.com --name "Your Site" --max-pages 200
 
-### Prerequisites
-- Python 3.7+ installed
-- Google API key for Gemini (free tier is sufficient)
-- Required Python packages (install with `pip install -r requirements.txt`)
+# Skip Gemini enhancement (basic site map only)
+./llms-txt-generator.py https://your-site.com --skip-enhance
+```
 
-### Running the Script
-1. Set your Google API key as an environment variable (recommended):
-   ```bash
-   export GOOGLE_API_KEY=your_api_key_here
-   ```
-   
-2. Run the script with default settings:
-   ```bash
-   ./llms-txt-generator.py
-   ```
-   
-3. Or provide a URL directly:
-   ```bash
-   ./llms-txt-generator.py https://your-site.com
-   ```
-   
-4. Customize with additional options:
-   ```bash
-   ./llms-txt-generator.py https://your-site.com --name "Your Site Name" --max-pages 200
-   ```
+### Options
 
-### Command Line Options
-- First argument (positional): Website URL to crawl (default: https://giesbusiness.illinois.edu)
-- `--name`: Site name for the output files (default: derived from URL)
-- `--max-pages`: Maximum pages to crawl (default: 150)
-- `--delay`: Delay between requests in seconds (default: 0.2)
-- `--skip-enhance`: Skip the enhancement step if you only want the basic site map
+| Flag | Default | Description |
+|------|---------|-------------|
+| `url` (positional) | `https://giesbusiness.illinois.edu` | Website to crawl |
+| `--name` | derived from URL | Site name for output |
+| `--max-pages` | 150 | Maximum pages to crawl |
+| `--delay` | 0.2 | Seconds between requests |
+| `--skip-enhance` | false | Skip Gemini API enhancement |
 
-### Output Files
-- `llms.txt`: AI-enhanced site map with hierarchical structure and descriptions
-- A basic site map is generated temporarily during processing but not saved by default
+## Who's using llms.txt
 
-## Maintenance Recommendations
+Anthropic, Cloudflare, Stripe, Vercel, Supabase, Shopify, NVIDIA, and 844,000+ other websites (BuiltWith, Oct 2025). No major university has adopted it yet — this repo is a proof of concept for Gies to be first.
 
-To keep this resource valuable over time:
+## Maintenance
 
-1. **Regular Updates**: Update quarterly or when significant website changes occur
-2. **Version Control**: Maintain the file in a version control system to track changes
-3. **Ownership Assignment**: Designate a specific department responsible for maintenance
-4. **Automated Validation**: Periodically check links for validity
-5. **Enhancement Process**: Continue improving descriptions and adding context
-
----
-
-*For questions or assistance with this resource, please contact the web development team.*
+Regenerate quarterly or after significant website changes. The generator script handles the crawl-and-enhance cycle automatically.

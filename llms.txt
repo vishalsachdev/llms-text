@@ -1,175 +1,69 @@
-```markdown
----
-{
-  "institution": "University of Illinois Gies College of Business",
-  "website": "https://giesbusiness.illinois.edu",
-  "generated_date": "2025-12-08",
-  "version": "1.0",
-  "description": "This structured site map provides an overview of the Gies College of Business website, categorized for improved navigation and comprehension by both humans and AI."
-}
----
+# Gies College of Business
 
-# Gies College of Business Website - Structured Site Map
+> Gies College of Business at the University of Illinois Urbana-Champaign offers undergraduate, graduate, and online degree programs in business. Known for pioneering affordable online MBAs, AI-integrated curriculum, and experiential learning. Part of a top-ranked public research university.
 
-> This site map organizes the Gies College of Business website content into key areas: Academics, Research & Faculty, Student Experience, About Gies, News & Events, and Support & Partnerships.
+Gies serves 7,000+ students across on-campus and online programs. The college partners with Google on AI tools, integrates generative AI across its curriculum, and operates facilities including the new Wymer Hall with AI-driven course production capabilities. Key differentiators include the iMBA (online MBA on Coursera), Illinois Business Consulting, and the MakerLab.
 
-## About Gies
+## Programs
 
-> Information about the college, its leadership, facilities, and key facts.
-
-* ### Dean's Office
-    * [Gies College of Business Dean's Office](https://giesbusiness.illinois.edu/dean)
-    * [W. Brooke Elliott (Dean's Profile)](https://giesbusiness.illinois.edu/profile/w-brooke-elliott)
-* ### Our Story
-    * [Gies College of Business Facts](https://giesbusiness.illinois.edu/our-story/gies-facts)
-    * [Our Facilities](https://giesbusiness.illinois.edu/our-story/facilities)
-    * [Office of Access and Community](https://giesbusiness.illinois.edu/our-story/access-and-community)
-* ### Contact Us
-    * [Contact Us](https://giesbusiness.illinois.edu/contact-us)
-
-
-## Academics
-
-> Information on undergraduate and graduate programs, admissions, and academic resources.
-
-* ### Undergraduate Hub
-    >  Resources for prospective and current undergraduate students.
-    * [Undergraduate Admissions](https://giesbusiness.illinois.edu/undergraduate-hub/admissions)
-        * [Visit Us](https://giesbusiness.illinois.edu/undergraduate-hub/admissions/visit-us#virtual)
-    * [Majors and Minors](https://giesbusiness.illinois.edu/undergraduate-hub/majors-and-minors)
-        * [Accountancy](https://giesbusiness.illinois.edu/undergraduate-hub/majors-and-minors/accounting)
-        * [Finance](https://giesbusiness.illinois.edu/undergraduate-hub/majors-and-minors/finance)
-        * [Information Systems](https://giesbusiness.illinois.edu/undergraduate-hub/majors-and-minors/information-systems)
-        * [Management](https://giesbusiness.illinois.edu/undergraduate-hub/majors-and-minors/management)
-        * [Marketing](https://giesbusiness.illinois.edu/undergraduate-hub/majors-and-minors/marketing)
-        * [Operations Management](https://giesbusiness.illinois.edu/undergraduate-hub/majors-and-minors/operations-management)
-        * [Supply Chain Management](https://giesbusiness.illinois.edu/undergraduate-hub/majors-and-minors/supply-chain-management)
-        * [Entrepreneurship](https://giesbusiness.illinois.edu/undergraduate-hub/majors-and-minors/entrepreneurship)
-        * [Hoeft Technology & Management](https://giesbusiness.illinois.edu/undergraduate-hub/majors-and-minors/hoeft-technology-management)
-        * [Business Minor](https://giesbusiness.illinois.edu/undergraduate-hub/majors-and-minors/business-minor)
-    * [Scholarships & Tuition](https://giesbusiness.illinois.edu/undergraduate-hub/scholarships)
-    * [Student Success](https://giesbusiness.illinois.edu/undergraduate-hub/student-success)
-    * [Gies Global Programs](https://giesbusiness.illinois.edu/undergraduate-hub/gies-global)
-    * [Honors Program](https://giesbusiness.illinois.edu/undergraduate-hub/honors)
-    * [Access and Multicultural Engagement](https://giesbusiness.illinois.edu/undergraduate-hub/access-multicultural-engagement)
-    * [Undergraduate Outcomes](https://giesbusiness.illinois.edu/undergraduate-hub/undergraduate-outcomes)
-* ### Graduate Hub
-    > Resources for prospective and current graduate students.
-    * [Master's Programs](https://giesbusiness.illinois.edu/graduate-hub/graduate)
-        * [MBA (iMBA)](https://giesbusiness.illinois.edu/graduate-hub/imba)
-        * [Master of Science in Accountancy (MSA/iMSA)](https://giesbusiness.illinois.edu/graduate-hub/accountancy)
-        * [Master of Science in Business Analytics (MSBA)](https://giesbusiness.illinois.edu/graduate-hub/business-analytics)
-        * [Master of Science in Finance (MSF)](https://giesbusiness.illinois.edu/msf)
-        * [Master of Science in Management (MSM/iMSM)](https://giesbusiness.illinois.edu/graduate-hub/management)
-        * [Master of Science in Technology Management (MSTM)](https://giesbusiness.illinois.edu/mstm)
-    * [Doctoral Programs](https://giesbusiness.illinois.edu/graduate-hub/doctoral)
-        * [PhD in Accountancy](https://giesbusiness.illinois.edu/graduate-hub/doctoral/accountancy)
-        * [PhD in Business Administration](https://giesbusiness.illinois.edu/graduate-hub/doctoral/business-administration)
-        * [PhD in Finance](https://giesbusiness.illinois.edu/graduate-hub/doctoral/finance)
-    * [Online Programs](https://giesbusiness.illinois.edu/graduate-hub/online)
-        * [iMBA](https://giesbusiness.illinois.edu/graduate-hub/online/imba)
-        * [iMSA](https://giesbusiness.illinois.edu/graduate-hub/online/imsa)
-        * [iMSM](https://giesbusiness.illinois.edu/graduate-hub/online/imsm)
-    * [Gies Professional Credentials](https://giesbusiness.illinois.edu/graduate-hub/gies-professional-credentials)
-        * [iAcademies](https://giesbusiness.illinois.edu/graduate-hub/gies-professional-credentials/icademies)
-        * [Strategic Leadership & Management](https://giesbusiness.illinois.edu/graduate-hub/gies-professional-credentials/strategic-leadership-management-graduate-certificate)
-    * [Talk to an Advisor](https://giesbusiness.illinois.edu/graduate-hub/talk-to-an-advisor)
-
-
-## Research & Faculty
-
-> Information about faculty research, publications, and departments.
-
-* ### Faculty Research
-    * [Faculty Profiles](https://giesbusiness.illinois.edu/faculty-research/faculty-profiles)
-        * [Barry Dickerson](https://giesbusiness.illinois.edu/profile/barry-dickerson)
-    * [Research at Gies](https://giesbusiness.illinois.edu/faculty-research/research-at-gies)
-        * [Research Centers & Initiatives](https://giesbusiness.illinois.edu/research/centers-initiatives)
-    * [Research Articles](https://giesbusiness.illinois.edu/faculty-research/research-articles)
-    * [Teaching Excellence](https://giesbusiness.illinois.edu/faculty-research/teaching-excellence)
-    * [Academic Departments](https://giesbusiness.illinois.edu/faculty-research/academic-departments)
-    * [Faculty & Staff Directory](https://giesbusiness.illinois.edu/faculty-research/faculty-staff-directory)
-
+- [Undergraduate Admissions](https://giesbusiness.illinois.edu/undergraduate-hub/admissions): Admissions info, requirements, and campus visits for prospective undergrads
+- [Majors and Minors](https://giesbusiness.illinois.edu/undergraduate-hub/majors-and-minors): Accountancy, Finance, Information Systems, Management, Marketing, Operations Management, Supply Chain Management, Entrepreneurship, Hoeft Technology & Management, Business Minor
+- [MBA (iMBA)](https://giesbusiness.illinois.edu/graduate-hub/imba): Fully online MBA program offered via Coursera — affordable, flexible, highly ranked
+- [MS in Accountancy (MSA/iMSA)](https://giesbusiness.illinois.edu/graduate-hub/accountancy): On-campus and online Master of Science in Accountancy
+- [MS in Business Analytics (MSBA)](https://giesbusiness.illinois.edu/graduate-hub/business-analytics): STEM-designated analytics degree
+- [MS in Finance (MSF)](https://giesbusiness.illinois.edu/msf): Master of Science in Finance
+- [MS in Management (MSM/iMSM)](https://giesbusiness.illinois.edu/graduate-hub/management): On-campus and online management degree
+- [MS in Technology Management (MSTM)](https://giesbusiness.illinois.edu/mstm): Technology management master's program
+- [Doctoral Programs](https://giesbusiness.illinois.edu/graduate-hub/doctoral): PhD programs in Accountancy, Business Administration, and Finance
+- [Online Programs Overview](https://giesbusiness.illinois.edu/graduate-hub/online): iMBA, iMSA, iMSM — fully online graduate degrees
+- [Gies Professional Credentials](https://giesbusiness.illinois.edu/graduate-hub/gies-professional-credentials): Stackable credentials, iAcademies, and graduate certificates
 
 ## Student Experience
 
-> Information about student life, career services, and experiential learning opportunities.
+- [Career & Professional Development](https://giesbusiness.illinois.edu/experience/career-professional-development): Career services, employer connections, Gies Professional Pathway
+- [Experiential Learning](https://giesbusiness.illinois.edu/experience/experiential-learning): Real-world projects with corporate partners
+- [Illinois Business Consulting](https://giesbusiness.illinois.edu/experience/experiential-learning/illinois-business-consulting): Student-run consulting organization serving real clients
+- [MakerLab](https://giesbusiness.illinois.edu/experience/makerlab): Innovation lab for prototyping and hands-on building
+- [iVenture Accelerator](https://giesbusiness.illinois.edu/experience/iventure): Startup accelerator for student entrepreneurs
+- [Student Organizations](https://giesbusiness.illinois.edu/experience/student-organizations): Clubs and professional organizations
+- [Academies & Centers](https://giesbusiness.illinois.edu/experience/academies-centers): Real Estate Finance Academy, Women in Finance Academy, AXIS Risk Management, Golder Academies
+- [Gies Global Programs](https://giesbusiness.illinois.edu/undergraduate-hub/gies-global): Study abroad and international opportunities
+- [Undergraduate Outcomes](https://giesbusiness.illinois.edu/undergraduate-hub/undergraduate-outcomes): Placement rates, salaries, and employer data
 
-* ### Experience
-    * [Academic Advising](https://giesbusiness.illinois.edu/experience/academic-advising)
-    * [Career & Professional Development](https://giesbusiness.illinois.edu/experience/career-professional-development)
-        * [Gies Professional Pathway](https://giesbusiness.illinois.edu/experience/career-professional-development/gies-professional-pathway)
-    * [Experiential Learning](https://giesbusiness.illinois.edu/experience/experiential-learning)
-        * [Illinois Business Consulting](https://giesbusiness.illinois.edu/experience/experiential-learning/illinois-business-consulting)
-        * [Submit Your Project](https://giesbusiness.illinois.edu/experience/experiential-learning/submit-your-project/)
-    * [Student Organizations](https://giesbusiness.illinois.edu/experience/student-organizations)
-    * [Academies & Centers](https://giesbusiness.illinois.edu/experience/academies-centers)
-        * [Real Estate Finance Academy](https://giesbusiness.illinois.edu/experience/academies-centers/real-estate-finance-academy)
-        * [Women in Finance Academy](https://giesbusiness.illinois.edu/experience/academies-centers/women-in-finance-academy)
-        * [AXIS Risk Management Academy](https://giesbusiness.illinois.edu/axis-risk-management)
-        * [Golder Academies](https://giesbusiness.illinois.edu/golder-academies)
-    * [iVenture Accelerator](https://giesbusiness.illinois.edu/experience/iventure)
-    * [MakerLab](https://giesbusiness.illinois.edu/experience/makerlab)
-    * [Plan a Visit](https://giesbusiness.illinois.edu/experience/visit-us)
-* ### Alumni
-    * [Gies College of Business Alumni](https://giesbusiness.illinois.edu/alumni)
+## Faculty & Research
 
+- [Faculty Profiles](https://giesbusiness.illinois.edu/faculty-research/faculty-profiles): Searchable directory of Gies faculty
+- [Research at Gies](https://giesbusiness.illinois.edu/faculty-research/research-at-gies): Overview of research strengths and focus areas
+- [Research Centers & Initiatives](https://giesbusiness.illinois.edu/research/centers-initiatives): Interdisciplinary research centers
+- [Academic Departments](https://giesbusiness.illinois.edu/faculty-research/academic-departments): Accountancy, Business Administration, Finance
+- [Faculty & Staff Directory](https://giesbusiness.illinois.edu/faculty-research/faculty-staff-directory): Full contact directory
+
+## About
+
+- [Gies College of Business](https://giesbusiness.illinois.edu/): Homepage
+- [Artificial Intelligence at Gies](https://giesbusiness.illinois.edu/about/artificial-intelligence): AI-integrated curriculum, Google Gemini partnership, AI avatars, chatbot initiatives
+- [Dean's Office](https://giesbusiness.illinois.edu/dean): College leadership
+- [Gies Facts](https://giesbusiness.illinois.edu/our-story/gies-facts): Rankings, enrollment, and key statistics
+- [Our Facilities](https://giesbusiness.illinois.edu/our-story/facilities): Campus buildings including Wymer Hall
+- [Access and Community](https://giesbusiness.illinois.edu/our-story/access-and-community): Diversity, equity, and inclusion initiatives
+- [Contact Us](https://giesbusiness.illinois.edu/contact-us): General contact information
+
+## Corporate & Alumni
+
+- [Corporate Partners](https://giesbusiness.illinois.edu/corporate): Partnership opportunities — invest, recruit, develop workforce, solve challenges
+- [Alumni](https://giesbusiness.illinois.edu/alumni): Alumni network and engagement
+- [Give to Gies](https://giesbusiness.illinois.edu/support-gies/giving): Donation and philanthropy information
+- [Office of Advancement](https://giesbusiness.illinois.edu/advancement): Development and fundraising
 
 ## News & Events
 
-> News articles, events, and featured stories about Gies College of Business.
+- [Gies News](https://giesbusiness.illinois.edu/news): Latest articles and announcements
+- [Events Calendar](https://giesbusiness.illinois.edu/events): Upcoming events, lectures, and workshops
 
-* ### News
-    * [Gies News](https://giesbusiness.illinois.edu/news)  (Consolidated News Listing - all other news links redirect here with filters)
-* ### Events
-    * [Business Development Events](https://giesbusiness.illinois.edu/events)
-        * [Specific Event Example: Gies Business Spring Luncheon 2025](https://giesbusiness.illinois.edu/event/2025/04/29/business-calendar/gies-business-spring-luncheon-2025)
-    * [Academic Calendar Events](https://giesbusiness.illinois.edu/events)
-        * [Example: Instruction Ends](https://giesbusiness.illinois.edu/event/2025/05/07/default-calendar/instruction-ends)
+## Optional
 
-
-## Support & Partnerships
-
-> Information on ways to support the college and corporate partnership opportunities.
-
-* ### Support Gies
-    * [Give Today](https://giesbusiness.illinois.edu/support-gies/giving)
-    * [Ways to Give](https://giesbusiness.illinois.edu/support-gies/ways-to-give)
-* ### Corporate Partnerships
-    * [Corporate Partners](https://giesbusiness.illinois.edu/corporate)
-        * [Invest in Gies](https://giesbusiness.illinois.edu/corporate/invest-in-gies)
-        * [Develop Your Workforce](https://giesbusiness.illinois.edu/corporate/develop-your-workforce)
-        * [Solve Business Challenges](https://giesbusiness.illinois.edu/corporate/solve-business-challenges)
-        * [Engage and Recruit Talent](https://giesbusiness.illinois.edu/corporate/engage-and-recruit-talent)
-* ### Advancement
-    * [Office of Advancement](https://giesbusiness.illinois.edu/advancement)
-
-
-## Documents & Resources
-
-> Links to downloadable documents.  **Note:** This section is added for organizational clarity.  Consider hosting these documents in a more user-friendly manner.
-
-* ### Docs
-    * [Various PDF Documents](https://giesbusiness.illinois.edu/docs) (List all the PDF URLs here)
-
-
-## Topic Index
-
-* **Admissions:** Undergraduate, Graduate
-* **Alumni:** Networking, Events
-* **Career Services:** Professional Development,  Gies Professional Pathway
-* **Corporate Partnerships:** Invest, Recruit, Develop Workforce
-* **Degrees:** MBA, MSA, MSBA, MSF, MSM, MSTM, PhD
-* **Events:** Business Development, Academic Calendar
-* **Experiential Learning:**  Illinois Business Consulting,  Projects
-* **Faculty:** Profiles, Research, Directory
-* **Facilities:**  Wymer Hall ([https://giesbusiness.illinois.edu/wymerhall](https://giesbusiness.illinois.edu/wymerhall)),  Campus Visits
-* **Financial Aid:** Scholarships, Tuition
-* **Giving:**  Donate, Ways to Give
-* **Global Programs:** Study Abroad, International Opportunities
-* **News:**  Articles, Announcements
-* **Research:** Centers & Initiatives, Articles, Publications
-* **Student Life:** Organizations, Academies,  Support Services
-
-
-```
+- [Scholarships & Tuition](https://giesbusiness.illinois.edu/undergraduate-hub/scholarships): Financial aid information for undergrads
+- [Honors Program](https://giesbusiness.illinois.edu/undergraduate-hub/honors): Honors track for high-achieving students
+- [Talk to an Advisor](https://giesbusiness.illinois.edu/graduate-hub/talk-to-an-advisor): Schedule a conversation with graduate admissions
+- [Academic Advising](https://giesbusiness.illinois.edu/experience/academic-advising): Advising resources for current students
+- [Plan a Visit](https://giesbusiness.illinois.edu/experience/visit-us): Campus visit scheduling
