@@ -43,3 +43,6 @@ Thumbs.db
 # API keys and credentials
 .env
 credentials.json
+
+# Benchmark output (regenerated on each run)
+benchmark-report.md
