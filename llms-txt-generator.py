@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Enhanced Web Crawler for LLM-optimized Site Maps
-------------------------------------------------
-This script crawls a website, creates a structured site map, and then enhances it
-using the Gemini API to add detailed descriptions and organize content hierarchically.
+llms.txt Generator (llmstxt.org spec)
+-------------------------------------
+Crawls a website and generates spec-compliant llms.txt files.
+Optionally enhances output via the Gemini API for better descriptions
+and logical grouping. Outputs follow the official format:
+  # Title > Summary, ## Sections, - [Link](url): description
 """
 
 import requests
@@ -29,28 +31,13 @@ def get_gemini_api_key():
 def enhance_with_gemini(content, api_key, prompt_template=None):
     if not prompt_template:
         prompt_template = """
-        You are an expert at organizing website content for better understanding by both humans and AI language models.
-        
-        I'll provide you with a basic site map of web pages (URLs and titles). Your task is to:
-        
-        1. Create a well-structured, hierarchical organization of the content
-        2. Add descriptive metadata about the site and its sections
-        3. Group related content together under logical section headers
-        4. Add brief descriptions for important pages
-        5. Include a topic-based index at the end
-        
-        Format the output as a Markdown document with:
-        - JSON metadata block at the top
-        - Clear hierarchical headings (## for main sections, ### for subsections)
-        - Descriptive link text and contextual notes
-        - Proper nesting to show relationships between pages
-        
-        Here's the content to enhance:
-        
+        Reorganize this site map into llms.txt spec format. Output ONLY the
+        markdown content, no code fences.
+
         {content}
         """
-    
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent"
+
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
     headers = {
         "Content-Type": "application/json",
     }
@@ -141,87 +128,104 @@ def crawl_site(base_url, max_pages=150, delay=0.1):
     print(f"Crawl complete. Found {len(pages)} pages.")
     return pages
 
-def group_and_format(pages, site_name):
+def group_and_format(pages, site_name, base_url):
     """
-    Group pages by section and format as markdown
+    Group pages by URL path section and format as llms.txt spec-compliant markdown.
+    Spec: H1 title, blockquote summary, H2 sections, - [Title](url): description links.
     """
     grouped = defaultdict(list)
     for url, title in pages:
         path = urlparse(url).path
         parts = path.strip("/").split("/")
-        # Handle empty paths (homepage)
         top_section = parts[0] if parts and parts[0] else "Home"
         grouped[top_section].append((title, url))
 
-    # Create a basic site map
-    today = datetime.datetime.now().strftime("%Y-%m-%d")
-    output = f"# {site_name} – Auto-Generated Site Map\n\n"
-    output += f"> Automatically generated site map on {today} for LLM understanding.\n\n"
-    
+    # Pretty-print section names: "undergraduate-hub" -> "Undergraduate Hub"
+    def section_label(slug):
+        return slug.replace("-", " ").replace("_", " ").title()
+
+    output = f"# {site_name}\n\n"
+    output += f"> Site map of {site_name} ({base_url}), auto-generated for LLM context.\n\n"
+
     # Sort sections alphabetically but put Home first
     sections = sorted(grouped.keys())
     if "Home" in sections:
         sections.remove("Home")
         sections = ["Home"] + sections
-        
+
     for section in sections:
-        output += f"## {section.capitalize()}\n\n"
-        # Sort links by URL length (shorter URLs tend to be higher-level pages)
+        output += f"## {section_label(section)}\n\n"
+        # Sort links by URL length (shorter = higher-level pages first)
         links = sorted(grouped[section], key=lambda x: len(x[1]))
         for title, url in links:
-            # Clean up title if needed
             clean_title = re.sub(r'\s+', ' ', title)
             output += f"- [{clean_title}]({url})\n"
         output += "\n"
-    
+
     return output
 
 def enhance_site_map(basic_map, site_name, api_key):
     """
-    Use Gemini API to enhance the basic site map
+    Use Gemini API to enhance the basic site map into llms.txt spec format.
     """
     print("Enhancing site map with Gemini API...")
-    
-    custom_prompt = f"""
-    You are an expert at organizing website content for better understanding by both humans and AI language models.
-    
-    I'll provide you with a basic site map of {site_name}'s web pages (URLs and titles). Your task is to:
-    
-    1. Create a well-structured, hierarchical organization of the content
-    2. Add descriptive metadata about the site and its sections using JSON at the top
-    3. Group related content together under logical section headers
-    4. Add brief descriptions for important pages and sections
-    5. Include a topic-based index at the end
-    6. Preserve all original URLs but improve organization and descriptions
-    
-    Format the output as a Markdown document with:
-    - JSON metadata block at the top with institution name, website, generated date, version, and description
-    - Clear hierarchical headings (## for main sections, ### for subsections, etc.)
-    - Descriptive link text and contextual notes (use > blockquotes for section descriptions)
-    - Proper nesting to show relationships between pages
-    
-    Here's the content to enhance:
-    
-    {basic_map}
-    """
-    
+
+    custom_prompt = f"""You are generating an llms.txt file following the official spec (llmstxt.org).
+
+Given this raw site map of {site_name}, produce a spec-compliant llms.txt file.
+
+STRICT FORMAT RULES — follow these exactly:
+1. Line 1: # {site_name}
+2. A blank line, then a single blockquote (>) with a 1-2 sentence summary of the site
+3. Optionally, 1-2 plain paragraphs of additional context (NO headings here)
+4. Then ## sections grouping related pages. Only use ## headings (H2), never ### or deeper
+5. Inside each ## section: a markdown list where each item is:
+   - [Page Title](https://full-url): Brief description of what this page contains
+6. Include a ## Optional section at the end for lower-priority pages
+7. Output ONLY the raw markdown. No code fences, no ```markdown blocks, no JSON metadata
+
+CONTENT RULES:
+- Preserve ALL original URLs exactly as given
+- Group related pages logically (programs, student life, research, about, etc.)
+- Write concise descriptions (under 15 words each) after the colon
+- Merge duplicate or near-duplicate entries
+- Put the most important pages first within each section
+
+Here's the raw site map to enhance:
+
+{basic_map}"""
+
     enhanced_map = enhance_with_gemini(basic_map, api_key, custom_prompt)
+    if enhanced_map:
+        # Strip code fences if Gemini wraps output despite instructions
+        enhanced_map = enhanced_map.strip()
+        if enhanced_map.startswith("```"):
+            lines = enhanced_map.split("\n")
+            # Remove first line (```markdown) and last line (```)
+            if lines[-1].strip() == "```":
+                lines = lines[1:-1]
+            else:
+                lines = lines[1:]
+            enhanced_map = "\n".join(lines).strip()
     return enhanced_map
 
 def main():
-    parser = argparse.ArgumentParser(description="Create an enhanced site map for LLM context")
-    parser.add_argument("url", type=str, nargs="?", help="Website URL to crawl", 
+    parser = argparse.ArgumentParser(
+        description="Generate llms.txt files following the llmstxt.org spec")
+    parser.add_argument("url", type=str, nargs="?", help="Website URL to crawl",
                         default="https://giesbusiness.illinois.edu")
-    parser.add_argument("--name", type=str, help="Site name for the output files",
+    parser.add_argument("--name", type=str, help="Site name for the H1 title",
                         default="Website")
     parser.add_argument("--max-pages", type=int, help="Maximum pages to crawl",
                         default=150)
     parser.add_argument("--delay", type=float, help="Delay between requests (seconds)",
                         default=0.2)
-    parser.add_argument("--skip-enhance", action="store_true", 
-                        help="Skip the enhancement step (no API call)")
+    parser.add_argument("--skip-enhance", action="store_true",
+                        help="Skip the Gemini enhancement step (basic spec-compliant output only)")
+    parser.add_argument("--full", action="store_true",
+                        help="Also generate llms-full.txt with higher page limit")
     args = parser.parse_args()
-    
+
     # Extract domain name from URL for site name if not provided
     if args.name == "Website":
         domain = urlparse(args.url).netloc
@@ -229,35 +233,41 @@ def main():
 
     # Crawl the site
     pages = crawl_site(args.url, max_pages=args.max_pages, delay=args.delay)
-    
-    # Format the basic site map
-    basic_map = group_and_format(pages, args.name)
-    
-    # If skip_enhance is true, save the basic site map as llms.txt
+
+    # Format the basic site map (now spec-compliant)
+    basic_map = group_and_format(pages, args.name, args.url)
+
     if args.skip_enhance:
-        basic_filename = "llms.txt"
-        with open(basic_filename, "w", encoding="utf-8") as f:
+        with open("llms.txt", "w", encoding="utf-8") as f:
             f.write(basic_map)
-        print(f"✅ Basic site map saved to {basic_filename}")
+        print(f"✅ Basic llms.txt saved ({len(pages)} pages)")
     else:
-        print("✅ Generated basic site map for enhancement")
-    
-    # Enhance the site map if not skipped
-    if not args.skip_enhance:
+        print(f"✅ Crawled {len(pages)} pages, sending to Gemini for enhancement...")
         try:
             api_key = get_gemini_api_key()
             enhanced_map = enhance_site_map(basic_map, args.name, api_key)
-            
+
             if enhanced_map:
-                enhanced_filename = "llms.txt"
-                with open(enhanced_filename, "w", encoding="utf-8") as f:
+                with open("llms.txt", "w", encoding="utf-8") as f:
                     f.write(enhanced_map)
-                print(f"✅ Enhanced site map saved to {enhanced_filename}")
+                print("✅ Enhanced llms.txt saved")
             else:
-                print("⚠️ Enhancement failed. Please check your API key or try again later.")
+                # Fall back to basic map on API failure
+                with open("llms.txt", "w", encoding="utf-8") as f:
+                    f.write(basic_map)
+                print("⚠️ Enhancement failed, saved basic llms.txt instead")
         except Exception as e:
             print(f"Error during enhancement: {e}")
-            print("⚠️ Enhancement failed. Basic site map is still available.")
+            with open("llms.txt", "w", encoding="utf-8") as f:
+                f.write(basic_map)
+            print("⚠️ Enhancement failed, saved basic llms.txt instead")
+
+    # Generate llms-full.txt with all crawled pages (no truncation)
+    if args.full:
+        full_map = group_and_format(pages, args.name, args.url)
+        with open("llms-full.txt", "w", encoding="utf-8") as f:
+            f.write(full_map)
+        print("✅ llms-full.txt saved (comprehensive version)")
     
 if __name__ == "__main__":
     main()
