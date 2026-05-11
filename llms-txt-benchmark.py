@@ -6,77 +6,98 @@ Tests whether an llms.txt file actually improves AI assistant responses
 about a website by running controlled before/after comparisons with
 LLM-as-judge scoring.
 
+De-biasing measures:
+  - The judge sees the two answers in a randomized order and is *blinded*
+    to which one had llms.txt context (labels are neutral "Response A/B").
+  - The judge can run on a different model/provider than the one being
+    tested (--judge-api / --judge-model) to reduce self-preference bias.
+  - Each query can be repeated over several --trials and averaged.
+
 Supports Claude (Anthropic), GPT (OpenAI), and Gemini (Google) APIs.
-Auto-detects which API keys are available.
 
 Usage:
-    # Auto-detect available API and use default Gies test queries
-    ./llms-txt-benchmark.py
-
-    # Specify files and API
-    ./llms-txt-benchmark.py --llms-txt llms.txt --full-txt llms-full.txt --api claude
-
-    # Use custom test queries from a JSON file
+    ./llms-txt-benchmark.py                       # auto-detect API, default queries
+    ./llms-txt-benchmark.py --api claude --judge-api openai
+    ./llms-txt-benchmark.py --full-txt llms-full.txt --trials 3
     ./llms-txt-benchmark.py --queries my-queries.json
-
-    # Auto-generate test queries from the llms.txt content
-    ./llms-txt-benchmark.py --auto-queries --llms-txt llms.txt
+    ./llms-txt-benchmark.py --auto-queries
 """
 
 import argparse
+import datetime
 import json
 import os
-import sys
-import time
-import datetime
+import random
 import re
 import statistics
+import sys
+import time
+from functools import partial
 from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
-# API Clients
+# Token accounting (best-effort, shared across all API calls)
+# ---------------------------------------------------------------------------
+
+TOKEN_USAGE = {"input": 0, "output": 0}
+
+
+def _track(input_tokens, output_tokens):
+    TOKEN_USAGE["input"] += input_tokens or 0
+    TOKEN_USAGE["output"] += output_tokens or 0
+
+
+# ---------------------------------------------------------------------------
+# API Clients — each returns the response text and records token usage.
 # ---------------------------------------------------------------------------
 
 def call_claude(prompt, system=None, model="claude-sonnet-4-20250514", max_tokens=1024):
-    """Call the Anthropic Claude API."""
     import anthropic
     client = anthropic.Anthropic()
-    kwargs = {"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]}
+    kwargs = {"model": model, "max_tokens": max_tokens,
+              "messages": [{"role": "user", "content": prompt}]}
     if system:
         kwargs["system"] = system
     response = client.messages.create(**kwargs)
+    usage = getattr(response, "usage", None)
+    if usage:
+        _track(getattr(usage, "input_tokens", 0), getattr(usage, "output_tokens", 0))
     return response.content[0].text
 
 
 def call_openai(prompt, system=None, model="gpt-4o", max_tokens=1024):
-    """Call the OpenAI API."""
     import openai
     client = openai.OpenAI()
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
-    response = client.chat.completions.create(model=model, messages=messages, max_tokens=max_tokens)
+    response = client.chat.completions.create(model=model, messages=messages,
+                                              max_tokens=max_tokens)
+    usage = getattr(response, "usage", None)
+    if usage:
+        _track(getattr(usage, "prompt_tokens", 0), getattr(usage, "completion_tokens", 0))
     return response.choices[0].message.content
 
 
 def call_gemini(prompt, system=None, model="gemini-1.5-pro-latest", max_tokens=1024):
-    """Call the Google Gemini API via REST."""
     import requests as req
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         raise ValueError("GOOGLE_API_KEY not set")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     text = f"{system}\n\n{prompt}" if system else prompt
-    data = {
-        "contents": [{"parts": [{"text": text}]}],
-        "generationConfig": {"temperature": 0.3, "maxOutputTokens": max_tokens},
-    }
-    resp = req.post(f"{url}?key={api_key}", headers={"Content-Type": "application/json"}, json=data)
+    data = {"contents": [{"parts": [{"text": text}]}],
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": max_tokens}}
+    resp = req.post(f"{url}?key={api_key}", headers={"Content-Type": "application/json"},
+                    json=data, timeout=60)
     if resp.status_code != 200:
         raise RuntimeError(f"Gemini API error {resp.status_code}: {resp.text}")
-    return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+    body = resp.json()
+    meta = body.get("usageMetadata", {})
+    _track(meta.get("promptTokenCount", 0), meta.get("candidatesTokenCount", 0))
+    return body["candidates"][0]["content"]["parts"][0]["text"]
 
 
 API_BACKENDS = {
@@ -87,11 +108,26 @@ API_BACKENDS = {
 
 
 def detect_api():
-    """Auto-detect available API from environment variables. Preference: Claude > OpenAI > Gemini."""
     for name in ("claude", "openai", "gemini"):
         if os.environ.get(API_BACKENDS[name]["env_key"]):
             return name
     return None
+
+
+def resolve_backend(api_arg, role):
+    """Return (call_fn, label, name) for an --api/--judge-api value."""
+    name = api_arg
+    if name == "auto":
+        name = detect_api()
+        if not name:
+            print("Error: No API key found. Set one of: "
+                  "ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY")
+            sys.exit(1)
+        print(f"Auto-detected {role} API: {API_BACKENDS[name]['label']}")
+    elif not os.environ.get(API_BACKENDS[name]["env_key"]):
+        print(f"Error: {API_BACKENDS[name]['env_key']} not set (required for {role} --api {name})")
+        sys.exit(1)
+    return API_BACKENDS[name]["fn"], API_BACKENDS[name]["label"], name
 
 
 # ---------------------------------------------------------------------------
@@ -103,11 +139,8 @@ DEFAULT_QUERIES = [
         "query": "I'm interested in an online MBA that focuses on AI. What does Gies College of Business offer?",
         "category": "prospective_student",
         "key_facts": [
-            "iMBA program",
-            "offered via Coursera",
-            "affordable/STEM-designated",
-            "AI-integrated curriculum",
-            "Google partnership (Gemini, NotebookLM)",
+            "iMBA program", "offered via Coursera", "affordable/STEM-designated",
+            "AI-integrated curriculum", "Google partnership (Gemini, NotebookLM)",
             "Wymer Hall / AI course production",
         ],
     },
@@ -115,20 +148,15 @@ DEFAULT_QUERIES = [
         "query": "What experiential learning opportunities does Gies have for undergrad business students?",
         "category": "prospective_student",
         "key_facts": [
-            "Illinois Business Consulting",
-            "MakerLab",
-            "iVenture Accelerator",
-            "experiential learning with corporate partners",
-            "30+ student organizations",
+            "Illinois Business Consulting", "MakerLab", "iVenture Accelerator",
+            "experiential learning with corporate partners", "30+ student organizations",
         ],
     },
     {
         "query": "Tell me about the MS in Business Analytics at the University of Illinois.",
         "category": "prospective_student",
         "key_facts": [
-            "MSBA program",
-            "STEM-designated",
-            "data science / machine learning focus",
+            "MSBA program", "STEM-designated", "data science / machine learning focus",
             "Gies College of Business",
         ],
     },
@@ -136,41 +164,32 @@ DEFAULT_QUERIES = [
         "query": "How is Gies College of Business using artificial intelligence in its programs?",
         "category": "ai_initiatives",
         "key_facts": [
-            "AI-integrated curriculum across all programs",
-            "Google partnership",
-            "Cleo (AI interview simulator)",
-            "Alma (AI chatbot for iMBA)",
-            "AI avatars for course content",
-            "Wymer Hall AI studios",
+            "AI-integrated curriculum across all programs", "Google partnership",
+            "Cleo (AI interview simulator)", "Alma (AI chatbot for iMBA)",
+            "AI avatars for course content", "Wymer Hall AI studios",
         ],
     },
     {
         "query": "What career support does Gies provide to its students?",
         "category": "career",
         "key_facts": [
-            "Career & Professional Development office",
-            "Gies Professional Pathway",
-            "corporate recruiting",
-            "career coaching / interview prep",
+            "Career & Professional Development office", "Gies Professional Pathway",
+            "corporate recruiting", "career coaching / interview prep",
         ],
     },
     {
         "query": "I'm a company looking to recruit business students from UIUC. How do I partner with Gies?",
         "category": "corporate",
         "key_facts": [
-            "Corporate Partners program",
-            "on-campus recruiting / career fairs",
-            "Illinois Business Consulting projects",
-            "workforce development",
+            "Corporate Partners program", "on-campus recruiting / career fairs",
+            "Illinois Business Consulting projects", "workforce development",
         ],
     },
     {
         "query": "What PhD programs does Gies College of Business offer?",
         "category": "prospective_student",
         "key_facts": [
-            "PhD in Accountancy",
-            "PhD in Business Administration",
-            "PhD in Finance",
+            "PhD in Accountancy", "PhD in Business Administration", "PhD in Finance",
             "research-focused",
         ],
     },
@@ -178,9 +197,7 @@ DEFAULT_QUERIES = [
         "query": "Does Gies have any stackable credentials or certificates I can earn before committing to a full degree?",
         "category": "prospective_student",
         "key_facts": [
-            "Gies Professional Credentials",
-            "iAcademies",
-            "stackable toward full degrees",
+            "Gies Professional Credentials", "iAcademies", "stackable toward full degrees",
             "graduate certificates",
         ],
     },
@@ -191,8 +208,20 @@ DEFAULT_QUERIES = [
 # Query auto-generation from llms.txt content
 # ---------------------------------------------------------------------------
 
+def _extract_json(raw):
+    json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
+    if json_match:
+        raw = json_match.group(1)
+    start = min((i for i in (raw.find("["), raw.find("{")) if i != -1), default=-1)
+    if start != -1:
+        # Match the corresponding close bracket from the end.
+        end = max(raw.rfind("]"), raw.rfind("}"))
+        if end > start:
+            raw = raw[start:end + 1]
+    return json.loads(raw)
+
+
 def auto_generate_queries(llms_content, call_fn):
-    """Use the AI API to generate test queries from llms.txt content."""
     prompt = f"""Below is the contents of an llms.txt file for a website. Generate 8 realistic test queries
 that a prospective student, employer, or researcher might ask an AI assistant about this organization.
 
@@ -204,48 +233,40 @@ llms.txt content:
 ---
 {llms_content}
 ---"""
-    raw = call_fn(prompt, system="You are a helpful assistant that returns only valid JSON.", max_tokens=2048)
-    # Extract JSON from response (handle markdown code fences)
-    json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
-    if json_match:
-        raw = json_match.group(1)
-    # Try to find array in response
-    bracket_start = raw.find("[")
-    bracket_end = raw.rfind("]")
-    if bracket_start != -1 and bracket_end != -1:
-        raw = raw[bracket_start : bracket_end + 1]
-    return json.loads(raw)
+    raw = call_fn(prompt, system="You are a helpful assistant that returns only valid JSON.",
+                  max_tokens=2048)
+    return _extract_json(raw)
 
 
 # ---------------------------------------------------------------------------
 # Benchmarking core
 # ---------------------------------------------------------------------------
 
-def run_query_pair(query_text, llms_content, call_fn, delay=1.0):
-    """Run a single query with and without llms.txt context. Returns (baseline, enhanced) response texts."""
-    # Baseline: no context
-    baseline_prompt = query_text
-    baseline_system = (
-        "You are a helpful AI assistant answering questions about universities and business schools. "
-        "Answer based on your general knowledge. If you're unsure about specific details, say so."
-    )
-    baseline = call_fn(baseline_prompt, system=baseline_system)
-    time.sleep(delay)
+BASELINE_SYSTEM = (
+    "You are a helpful AI assistant answering questions about universities and business schools. "
+    "Answer based on your general knowledge. If you're unsure about specific details, say so."
+)
 
-    # Enhanced: with llms.txt context
-    enhanced_system = (
+
+def enhanced_system(llms_content):
+    return (
         "You are a helpful AI assistant answering questions about universities and business schools. "
         "You have been provided with the following structured reference about the institution. "
         "Use it to give accurate, specific, and actionable answers.\n\n"
         f"--- REFERENCE ---\n{llms_content}\n--- END REFERENCE ---"
     )
-    enhanced = call_fn(query_text, system=enhanced_system)
-    time.sleep(delay)
 
+
+def run_query_pair(query_text, llms_content, call_fn, delay=1.0):
+    """Run a query with and without llms.txt context. Returns (baseline, enhanced)."""
+    baseline = call_fn(query_text, system=BASELINE_SYSTEM)
+    time.sleep(delay)
+    enhanced = call_fn(query_text, system=enhanced_system(llms_content))
+    time.sleep(delay)
     return baseline, enhanced
 
 
-JUDGE_PROMPT_TEMPLATE = """You are an expert evaluator assessing AI assistant responses about a university/business school.
+JUDGE_PROMPT_TEMPLATE = """You are an expert evaluator assessing two AI assistant responses about a university/business school.
 
 A user asked: "{query}"
 
@@ -254,66 +275,68 @@ Here are the key facts that a good answer should include:
 
 ---
 
-**Response A (Baseline — no structured context provided):**
-{baseline}
+**Response A:**
+{response_a}
 
 ---
 
-**Response B (Enhanced — llms.txt structured context provided):**
-{enhanced}
+**Response B:**
+{response_b}
 
 ---
 
 Score EACH response on a scale of 1-10 for each criterion:
 1. **Accuracy** — Are the stated facts correct? No hallucinations?
 2. **Completeness** — How many of the key facts are covered?
-3. **Specificity** — Does it give concrete details (program names, URLs, features) vs. vague generalities?
+3. **Specificity** — Concrete details (program names, URLs, features) vs. vague generalities?
 4. **Actionability** — Does it help the user take a next step (links, contact info, clear recommendations)?
 
 Return ONLY valid JSON with this exact structure:
 {{
-  "baseline": {{"accuracy": N, "completeness": N, "specificity": N, "actionability": N, "notes": "brief explanation"}},
-  "enhanced": {{"accuracy": N, "completeness": N, "specificity": N, "actionability": N, "notes": "brief explanation"}}
+  "response_a": {{"accuracy": N, "completeness": N, "specificity": N, "actionability": N, "notes": "brief explanation"}},
+  "response_b": {{"accuracy": N, "completeness": N, "specificity": N, "actionability": N, "notes": "brief explanation"}}
 }}"""
 
+JUDGE_SYSTEM = ("You are a rigorous, impartial evaluator. Return only valid JSON. "
+                "Be strict in scoring. You do not know how either response was produced.")
 
-def judge_responses(query_obj, baseline, enhanced, call_fn):
-    """Use LLM-as-judge to score baseline vs enhanced responses."""
-    key_facts_formatted = "\n".join(f"- {f}" for f in query_obj["key_facts"])
+
+def judge_responses(query_obj, baseline, enhanced, call_fn, rng):
+    """Blinded LLM-as-judge: random A/B order, scores mapped back to baseline/enhanced."""
+    enhanced_is_a = rng.random() < 0.5
+    resp_a, resp_b = (enhanced, baseline) if enhanced_is_a else (baseline, enhanced)
     prompt = JUDGE_PROMPT_TEMPLATE.format(
         query=query_obj["query"],
-        key_facts_formatted=key_facts_formatted,
-        baseline=baseline,
-        enhanced=enhanced,
+        key_facts_formatted="\n".join(f"- {f}" for f in query_obj["key_facts"]),
+        response_a=resp_a, response_b=resp_b,
     )
-    raw = call_fn(
-        prompt,
-        system="You are a rigorous, impartial evaluator. Return only valid JSON. Be strict in scoring.",
-        max_tokens=1024,
-    )
-    # Extract JSON
-    json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
-    if json_match:
-        raw = json_match.group(1)
-    brace_start = raw.find("{")
-    brace_end = raw.rfind("}")
-    if brace_start != -1 and brace_end != -1:
-        raw = raw[brace_start : brace_end + 1]
-    return json.loads(raw)
+    raw = call_fn(prompt, system=JUDGE_SYSTEM, max_tokens=1024)
+    parsed = _extract_json(raw)
+    a, b = parsed["response_a"], parsed["response_b"]
+    return {"enhanced": a, "baseline": b} if enhanced_is_a else {"enhanced": b, "baseline": a}
+
+
+CRITERIA = ["accuracy", "completeness", "specificity", "actionability"]
+
+
+def average_score_sets(score_sets):
+    """Average a list of {baseline:{...}, enhanced:{...}} dicts criterion-wise."""
+    out = {"baseline": {}, "enhanced": {}}
+    for side in ("baseline", "enhanced"):
+        for c in CRITERIA:
+            out[side][c] = statistics.mean(s[side][c] for s in score_sets)
+        notes = [s[side].get("notes") for s in score_sets if s[side].get("notes")]
+        out[side]["notes"] = notes[0] if notes else ""
+    return out
 
 
 # ---------------------------------------------------------------------------
 # Report generation
 # ---------------------------------------------------------------------------
 
-CRITERIA = ["accuracy", "completeness", "specificity", "actionability"]
-
-
-def generate_report(results, api_label, llms_file, full_file):
-    """Generate a markdown benchmark report."""
+def generate_report(results, gen_label, judge_label, llms_file, full_file, trials):
     today = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # Aggregate scores
     baseline_scores = {c: [] for c in CRITERIA}
     enhanced_scores = {c: [] for c in CRITERIA}
     for r in results:
@@ -321,105 +344,76 @@ def generate_report(results, api_label, llms_file, full_file):
             baseline_scores[c].append(r["scores"]["baseline"][c])
             enhanced_scores[c].append(r["scores"]["enhanced"][c])
 
-    lines = []
-    lines.append("# llms.txt Benchmark Report")
-    lines.append("")
-    lines.append(f"> Generated {today} using {api_label}")
-    lines.append("")
-    lines.append("## Configuration")
-    lines.append("")
-    lines.append(f"- **llms.txt file:** `{llms_file}`")
+    lines = ["# llms.txt Benchmark Report", "",
+             f"> Generated {today}", "",
+             "## Configuration", "",
+             f"- **llms.txt file:** `{llms_file}`"]
     if full_file:
         lines.append(f"- **llms-full.txt file:** `{full_file}`")
-    lines.append(f"- **Test queries:** {len(results)}")
-    lines.append(f"- **AI backend:** {api_label}")
-    lines.append(f"- **Scoring method:** LLM-as-judge (same backend)")
-    lines.append("")
-
-    # Summary table
-    lines.append("## Summary Scores (1-10 scale)")
-    lines.append("")
-    lines.append("| Criterion | Baseline (no context) | With llms.txt | Improvement |")
-    lines.append("|-----------|----------------------|---------------|-------------|")
-    total_baseline = []
-    total_enhanced = []
+    lines += [
+        f"- **Test queries:** {len(results)}",
+        f"- **Trials per query:** {trials}",
+        f"- **Answer model:** {gen_label}",
+        f"- **Judge model:** {judge_label}",
+        "- **Bias controls:** judge is blinded to which answer used llms.txt; A/B order randomized per trial",
+        "",
+        "## Summary Scores (1-10 scale)", "",
+        "| Criterion | Baseline (no context) | With llms.txt | Improvement |",
+        "|-----------|----------------------|---------------|-------------|",
+    ]
+    total_baseline, total_enhanced = [], []
     for c in CRITERIA:
-        b_avg = statistics.mean(baseline_scores[c])
-        e_avg = statistics.mean(enhanced_scores[c])
+        b_avg, e_avg = statistics.mean(baseline_scores[c]), statistics.mean(enhanced_scores[c])
         diff = e_avg - b_avg
-        sign = "+" if diff > 0 else ""
         total_baseline.append(b_avg)
         total_enhanced.append(e_avg)
-        lines.append(f"| {c.capitalize()} | {b_avg:.1f} | {e_avg:.1f} | {sign}{diff:.1f} |")
-
-    overall_b = statistics.mean(total_baseline)
-    overall_e = statistics.mean(total_enhanced)
+        lines.append(f"| {c.capitalize()} | {b_avg:.1f} | {e_avg:.1f} | {'+' if diff > 0 else ''}{diff:.1f} |")
+    overall_b, overall_e = statistics.mean(total_baseline), statistics.mean(total_enhanced)
     overall_diff = overall_e - overall_b
-    sign = "+" if overall_diff > 0 else ""
-    lines.append(f"| **Overall** | **{overall_b:.1f}** | **{overall_e:.1f}** | **{sign}{overall_diff:.1f}** |")
+    lines.append(f"| **Overall** | **{overall_b:.1f}** | **{overall_e:.1f}** | "
+                 f"**{'+' if overall_diff > 0 else ''}{overall_diff:.1f}** |")
     lines.append("")
-
-    # Improvement percentage
     if overall_b > 0:
-        pct = ((overall_e - overall_b) / overall_b) * 100
-        lines.append(f"**Overall improvement: {pct:+.0f}%**")
+        lines.append(f"**Overall improvement: {((overall_e - overall_b) / overall_b) * 100:+.0f}%**")
     lines.append("")
 
-    # Per-query details
-    lines.append("## Per-Query Results")
-    lines.append("")
+    lines += ["## Per-Query Results", ""]
     for i, r in enumerate(results, 1):
         lines.append(f"### Query {i}: {r['query']}")
         lines.append(f"*Category: {r['category']}*")
         lines.append("")
-
-        # Score mini-table
-        lines.append("| Criterion | Baseline | Enhanced | Delta |")
-        lines.append("|-----------|----------|----------|-------|")
+        lines += ["| Criterion | Baseline | Enhanced | Delta |",
+                  "|-----------|----------|----------|-------|"]
         for c in CRITERIA:
-            b = r["scores"]["baseline"][c]
-            e = r["scores"]["enhanced"][c]
+            b, e = r["scores"]["baseline"][c], r["scores"]["enhanced"][c]
             d = e - b
-            s = "+" if d > 0 else ""
-            lines.append(f"| {c.capitalize()} | {b} | {e} | {s}{d} |")
+            lines.append(f"| {c.capitalize()} | {b:.1f} | {e:.1f} | {'+' if d > 0 else ''}{d:.1f} |")
         lines.append("")
-
-        # Judge notes
         if r["scores"]["baseline"].get("notes"):
             lines.append(f"**Baseline note:** {r['scores']['baseline']['notes']}")
         if r["scores"]["enhanced"].get("notes"):
             lines.append(f"**Enhanced note:** {r['scores']['enhanced']['notes']}")
-        lines.append("")
+        lines += ["", "<details>", "<summary>Response excerpts (click to expand)</summary>", "",
+                  "**Baseline response:**", f"> {r['baseline'][:500]}...", "",
+                  "**Enhanced response (with llms.txt):**", f"> {r['enhanced'][:500]}...", "",
+                  "</details>", ""]
 
-        # Show response excerpts (first 300 chars)
-        lines.append("<details>")
-        lines.append("<summary>Response excerpts (click to expand)</summary>")
-        lines.append("")
-        lines.append("**Baseline response:**")
-        lines.append(f"> {r['baseline'][:500]}...")
-        lines.append("")
-        lines.append("**Enhanced response (with llms.txt):**")
-        lines.append(f"> {r['enhanced'][:500]}...")
-        lines.append("")
-        lines.append("</details>")
-        lines.append("")
-
-    # Methodology
-    lines.append("## Methodology")
-    lines.append("")
-    lines.append("This benchmark measures whether providing an llms.txt file as context to an AI assistant")
-    lines.append("improves the quality of its responses about the website/organization.")
-    lines.append("")
-    lines.append("For each test query:")
-    lines.append("1. **Baseline**: The AI answers using only its general training knowledge (no llms.txt context)")
-    lines.append("2. **Enhanced**: The AI answers with the llms.txt content injected as a system-level reference")
-    lines.append("3. **Judging**: A separate LLM call scores both responses on accuracy, completeness,")
-    lines.append("   specificity, and actionability (1-10 scale) against known key facts")
-    lines.append("")
-    lines.append("This simulates the real-world scenario: when a user asks an AI assistant about your")
-    lines.append("organization, does having llms.txt available produce meaningfully better answers?")
-    lines.append("")
-
+    lines += [
+        "## Methodology", "",
+        "For each test query (repeated over the configured number of trials):",
+        "1. **Baseline**: the answer model replies using only its general training knowledge.",
+        "2. **Enhanced**: the answer model replies with the llms.txt content injected as a system reference.",
+        "3. **Judging**: a separate judge call scores both answers (1-10) on accuracy, completeness,",
+        "   specificity, and actionability against known key facts. The judge sees the two answers in a",
+        "   random order with neutral labels and is not told which one used llms.txt.",
+        "4. Scores are averaged across trials.",
+        "",
+        "This simulates the real-world scenario: when a user asks an AI assistant about your",
+        "organization, does having llms.txt available produce meaningfully better answers?",
+        "",
+        f"_Token usage (best-effort): {TOKEN_USAGE['input']:,} input + {TOKEN_USAGE['output']:,} output_",
+        "",
+    ]
     return "\n".join(lines)
 
 
@@ -429,60 +423,40 @@ def generate_report(results, api_label, llms_file, full_file):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Benchmark llms.txt effectiveness by comparing AI responses with and without context"
-    )
-    parser.add_argument(
-        "--llms-txt", type=str, default="llms.txt",
-        help="Path to llms.txt file (default: llms.txt)",
-    )
-    parser.add_argument(
-        "--full-txt", type=str, default=None,
-        help="Path to llms-full.txt file (optional — if provided, used as context instead of llms.txt)",
-    )
-    parser.add_argument(
-        "--api", type=str, choices=["claude", "openai", "gemini", "auto"], default="auto",
-        help="AI API backend to use (default: auto-detect)",
-    )
-    parser.add_argument(
-        "--queries", type=str, default=None,
-        help="Path to JSON file with custom test queries",
-    )
-    parser.add_argument(
-        "--auto-queries", action="store_true",
-        help="Auto-generate test queries from the llms.txt content using the AI API",
-    )
-    parser.add_argument(
-        "--output", type=str, default="benchmark-report.md",
-        help="Output file for the benchmark report (default: benchmark-report.md)",
-    )
-    parser.add_argument(
-        "--delay", type=float, default=1.0,
-        help="Delay between API calls in seconds (default: 1.0)",
-    )
-    parser.add_argument(
-        "--max-queries", type=int, default=None,
-        help="Limit the number of test queries to run (useful for quick tests)",
-    )
+        description="Benchmark llms.txt effectiveness by comparing AI responses with and without context")
+    parser.add_argument("--llms-txt", default="llms.txt", help="Path to llms.txt file")
+    parser.add_argument("--full-txt", default=None,
+                        help="Path to llms-full.txt (used as context instead of llms.txt if provided)")
+    parser.add_argument("--api", choices=["claude", "openai", "gemini", "auto"], default="auto",
+                        help="API backend that produces the answers")
+    parser.add_argument("--judge-api", choices=["claude", "openai", "gemini", "auto", "same"],
+                        default="same", help="API backend for the judge (default: same as --api)")
+    parser.add_argument("--gen-model", default=None, help="Override the answer model name")
+    parser.add_argument("--judge-model", default=None, help="Override the judge model name")
+    parser.add_argument("--trials", type=int, default=1, help="Times to repeat each query (averaged)")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for A/B ordering")
+    parser.add_argument("--queries", default=None, help="Path to JSON file with custom test queries")
+    parser.add_argument("--auto-queries", action="store_true",
+                        help="Auto-generate test queries from the llms.txt content")
+    parser.add_argument("--output", default="benchmark-report.md", help="Output report file")
+    parser.add_argument("--delay", type=float, default=1.0, help="Delay between API calls (seconds)")
+    parser.add_argument("--max-queries", type=int, default=None, help="Limit number of test queries")
     args = parser.parse_args()
 
-    # --- Resolve API backend ---
-    api_name = args.api
-    if api_name == "auto":
-        api_name = detect_api()
-        if not api_name:
-            print("Error: No API key found. Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY")
-            sys.exit(1)
-        print(f"Auto-detected API: {API_BACKENDS[api_name]['label']}")
+    rng = random.Random(args.seed)
+
+    gen_fn, gen_label, gen_name = resolve_backend(args.api, "answer")
+    if args.gen_model:
+        gen_fn = partial(gen_fn, model=args.gen_model)
+        gen_label += f" [{args.gen_model}]"
+    if args.judge_api == "same":
+        judge_fn, judge_label = gen_fn, gen_label
     else:
-        env_key = API_BACKENDS[api_name]["env_key"]
-        if not os.environ.get(env_key):
-            print(f"Error: {env_key} not set. Required for --api {api_name}")
-            sys.exit(1)
+        judge_fn, judge_label, _ = resolve_backend(args.judge_api, "judge")
+    if args.judge_model:
+        judge_fn = partial(judge_fn, model=args.judge_model)
+        judge_label = judge_label.split(" [")[0] + f" [{args.judge_model}]"
 
-    call_fn = API_BACKENDS[api_name]["fn"]
-    api_label = API_BACKENDS[api_name]["label"]
-
-    # --- Load llms.txt ---
     llms_path = Path(args.llms_txt)
     if not llms_path.exists():
         print(f"Error: {llms_path} not found")
@@ -490,21 +464,16 @@ def main():
     llms_content = llms_path.read_text(encoding="utf-8")
     print(f"Loaded {llms_path} ({len(llms_content)} chars)")
 
-    # Use llms-full.txt as context if provided
-    context_content = llms_content
-    context_file = str(llms_path)
-    full_file = None
+    context_content, context_file, full_file = llms_content, str(llms_path), None
     if args.full_txt:
         full_path = Path(args.full_txt)
         if full_path.exists():
             context_content = full_path.read_text(encoding="utf-8")
-            context_file = str(full_path)
-            full_file = str(full_path)
+            context_file = full_file = str(full_path)
             print(f"Using {full_path} as context ({len(context_content)} chars)")
         else:
             print(f"Warning: {full_path} not found, using {llms_path} as context")
 
-    # --- Load or generate test queries ---
     if args.queries:
         query_path = Path(args.queries)
         if not query_path.exists():
@@ -514,84 +483,72 @@ def main():
         print(f"Loaded {len(queries)} custom queries from {query_path}")
     elif args.auto_queries:
         print("Auto-generating test queries from llms.txt content...")
-        queries = auto_generate_queries(llms_content, call_fn)
+        queries = auto_generate_queries(llms_content, gen_fn)
         print(f"Generated {len(queries)} test queries")
     else:
         queries = DEFAULT_QUERIES
         print(f"Using {len(queries)} default test queries")
 
     if args.max_queries:
-        queries = queries[: args.max_queries]
+        queries = queries[:args.max_queries]
         print(f"Limited to {len(queries)} queries")
 
-    # --- Run benchmark ---
-    print(f"\nRunning benchmark with {len(queries)} queries using {api_label}...\n")
+    trials = max(1, args.trials)
+    print(f"\nRunning benchmark: {len(queries)} queries x {trials} trial(s)")
+    print(f"  Answers: {gen_label}\n  Judge:   {judge_label}\n")
     results = []
 
     for i, q in enumerate(queries, 1):
         query_text = q["query"]
         print(f"[{i}/{len(queries)}] {query_text[:70]}...")
-
+        score_sets, baselines, enhanceds = [], [], []
         try:
-            # Get baseline and enhanced responses
-            print(f"  Generating baseline response...")
-            baseline, enhanced = run_query_pair(query_text, context_content, call_fn, delay=args.delay)
-            print(f"  Generating enhanced response...")
-
-            # Judge the responses
-            print(f"  Scoring with LLM judge...")
-            time.sleep(args.delay)
-            scores = judge_responses(q, baseline, enhanced, call_fn)
-
-            results.append({
-                "query": query_text,
-                "category": q.get("category", "general"),
-                "key_facts": q.get("key_facts", []),
-                "baseline": baseline,
-                "enhanced": enhanced,
-                "scores": scores,
-            })
-
-            # Print quick summary
-            b_avg = statistics.mean([scores["baseline"][c] for c in CRITERIA])
-            e_avg = statistics.mean([scores["enhanced"][c] for c in CRITERIA])
-            print(f"  → Baseline: {b_avg:.1f}  Enhanced: {e_avg:.1f}  Delta: {e_avg - b_avg:+.1f}")
-            print()
-
-        except Exception as e:
-            print(f"  ✗ Error: {e}")
-            print()
+            for t in range(trials):
+                if trials > 1:
+                    print(f"  trial {t + 1}/{trials}")
+                baseline, enhanced = run_query_pair(query_text, context_content, gen_fn,
+                                                    delay=args.delay)
+                time.sleep(args.delay)
+                scores = judge_responses(q, baseline, enhanced, judge_fn, rng)
+                score_sets.append(scores)
+                baselines.append(baseline)
+                enhanceds.append(enhanced)
+        except Exception as e:  # noqa: BLE001 - skip the query, keep going
+            print(f"  ✗ Error: {e}\n")
             continue
+
+        avg = average_score_sets(score_sets)
+        results.append({
+            "query": query_text,
+            "category": q.get("category", "general"),
+            "key_facts": q.get("key_facts", []),
+            "baseline": baselines[0],
+            "enhanced": enhanceds[0],
+            "scores": avg,
+        })
+        b_avg = statistics.mean(avg["baseline"][c] for c in CRITERIA)
+        e_avg = statistics.mean(avg["enhanced"][c] for c in CRITERIA)
+        print(f"  → Baseline: {b_avg:.1f}  Enhanced: {e_avg:.1f}  Delta: {e_avg - b_avg:+.1f}\n")
 
     if not results:
         print("No results collected. Check your API key and network connection.")
         sys.exit(1)
 
-    # --- Generate report ---
-    report = generate_report(results, api_label, context_file, full_file)
-    output_path = Path(args.output)
-    output_path.write_text(report, encoding="utf-8")
-    print(f"\n{'='*60}")
-    print(f"Benchmark complete! Report saved to: {output_path}")
-    print(f"{'='*60}")
+    report = generate_report(results, gen_label, judge_label, context_file, full_file, trials)
+    Path(args.output).write_text(report, encoding="utf-8")
+    print(f"\n{'=' * 60}\nBenchmark complete! Report saved to: {args.output}\n{'=' * 60}")
 
-    # Print summary to terminal
-    total_b = []
-    total_e = []
-    for r in results:
-        for c in CRITERIA:
-            total_b.append(r["scores"]["baseline"][c])
-            total_e.append(r["scores"]["enhanced"][c])
-    avg_b = statistics.mean(total_b)
-    avg_e = statistics.mean(total_e)
+    total_b = [r["scores"]["baseline"][c] for r in results for c in CRITERIA]
+    total_e = [r["scores"]["enhanced"][c] for r in results for c in CRITERIA]
+    avg_b, avg_e = statistics.mean(total_b), statistics.mean(total_e)
     pct = ((avg_e - avg_b) / avg_b) * 100 if avg_b > 0 else 0
-
     print(f"\n  Baseline average:  {avg_b:.1f}/10")
     print(f"  Enhanced average:  {avg_e:.1f}/10")
     print(f"  Improvement:       {pct:+.0f}%")
-    print(f"\n  Queries tested:    {len(results)}")
-    print(f"  API backend:       {api_label}")
-    print()
+    print(f"\n  Queries tested:    {len(results)}  (x{trials} trials)")
+    print(f"  Answer model:      {gen_label}")
+    print(f"  Judge model:       {judge_label}")
+    print(f"  Token usage:       {TOKEN_USAGE['input']:,} in + {TOKEN_USAGE['output']:,} out\n")
 
 
 if __name__ == "__main__":

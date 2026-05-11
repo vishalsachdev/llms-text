@@ -2,175 +2,315 @@
 """
 llms.txt Generator (llmstxt.org spec)
 -------------------------------------
-Crawls a website and generates spec-compliant llms.txt files.
-Optionally enhances output via the Gemini API for better descriptions
-and logical grouping. Outputs follow the official format:
+Crawls a website and generates spec-compliant llms.txt files:
   # Title > Summary, ## Sections, - [Link](url): description
+
+Highlights:
+  - Respects robots.txt and seeds the crawl from sitemap.xml when available.
+  - Normalizes URLs (drops fragments and tracking params) and stays strictly
+    on the target host/path prefix.
+  - With --full, fetches each page and extracts its main text to build a real
+    llms-full.txt (page content, not just a link map), per the spec.
+  - Optionally polishes the index with the Gemini API.
 """
 
-import requests
+import argparse
+import datetime
 import json
 import os
-import time
-import datetime
-import argparse
 import re
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
+import time
 from collections import defaultdict
+from urllib import robotparser
+from urllib.parse import urldefrag, urljoin, urlparse, urlunparse
+from xml.etree import ElementTree
 
-# Check for Google API key in environment or prompt user
-def get_gemini_api_key():
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        print("No Gemini API key found in environment variables.")
-        api_key = input("Please enter your Google API key (or set GOOGLE_API_KEY environment variable): ")
-    return api_key
+import requests
+from bs4 import BeautifulSoup
 
-# Gemini API call function
-def enhance_with_gemini(content, api_key, prompt_template=None):
-    if not prompt_template:
-        prompt_template = """
-        Reorganize this site map into llms.txt spec format. Output ONLY the
-        markdown content, no code fences.
+USER_AGENT = "llms-txt-generator/1.0 (+https://llmstxt.org/)"
+SESSION = requests.Session()
+SESSION.headers.update({"User-Agent": USER_AGENT})
 
-        {content}
-        """
+SKIP_SUFFIXES = (
+    ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".zip", ".gz",
+    ".tar", ".mp4", ".mp3", ".mov", ".css", ".js", ".ico", ".woff", ".woff2",
+    ".xml", ".json", ".rss",
+)
+TRACKING_PARAMS = ("utm_source", "utm_medium", "utm_campaign", "utm_term",
+                   "utm_content", "gclid", "fbclid", "mc_cid", "mc_eid", "ref")
 
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
-    headers = {
-        "Content-Type": "application/json",
-    }
-    
-    data = {
-        "contents": [
-            {
-                "parts": [
-                    {
-                        "text": prompt_template.format(content=content)
-                    }
-                ]
-            }
-        ],
-        "generationConfig": {
-            "temperature": 0.2,
-            "topK": 40,
-            "topP": 0.95,
-            "maxOutputTokens": 8192,
-        }
-    }
-    
-    response = requests.post(
-        f"{url}?key={api_key}",
-        headers=headers,
-        data=json.dumps(data)
+
+# ---------------------------------------------------------------------------
+# URL helpers
+# ---------------------------------------------------------------------------
+
+def normalize_url(url):
+    """Drop fragments and tracking query params; normalize trailing slash."""
+    url, _ = urldefrag(url)
+    parts = urlparse(url)
+    query = "&".join(
+        kv for kv in parts.query.split("&")
+        if kv and kv.split("=", 1)[0].lower() not in TRACKING_PARAMS
     )
-    
-    if response.status_code != 200:
-        print(f"Error calling Gemini API: {response.status_code}")
-        print(response.text)
-        return None
-    
-    result = response.json()
+    path = parts.path or "/"
+    if len(path) > 1 and path.endswith("/"):
+        path = path.rstrip("/")
+    return urlunparse((parts.scheme, parts.netloc, path, parts.params, query, ""))
+
+
+def in_scope(url, base):
+    """True if url is on the same host and under the base path prefix."""
+    u, b = urlparse(url), urlparse(base)
+    if u.scheme not in ("http", "https") or u.netloc.lower() != b.netloc.lower():
+        return False
+    base_prefix = b.path.rstrip("/")
+    return u.path == base_prefix or u.path.startswith(base_prefix + "/") or base_prefix == ""
+
+
+def looks_like_html(url):
+    return not url.lower().split("?", 1)[0].endswith(SKIP_SUFFIXES)
+
+
+# ---------------------------------------------------------------------------
+# Crawl
+# ---------------------------------------------------------------------------
+
+def load_robots(base_url):
+    rp = robotparser.RobotFileParser()
+    robots_url = urljoin(base_url, "/robots.txt")
     try:
-        generated_text = result["candidates"][0]["content"]["parts"][0]["text"]
-        return generated_text
-    except (KeyError, IndexError) as e:
-        print(f"Error parsing Gemini API response: {e}")
-        print(result)
-        return None
+        resp = SESSION.get(robots_url, timeout=10)
+        if resp.status_code == 200:
+            rp.parse(resp.text.splitlines())
+        else:
+            rp.parse([])  # no robots.txt -> allow all
+    except requests.RequestException:
+        rp.parse([])
+    return rp
 
-def crawl_site(base_url, max_pages=150, delay=0.1):
-    """
-    Crawl a website and collect page URLs and titles
-    """
-    print(f"Starting crawl of {base_url} (max: {max_pages} pages)")
-    visited = set()
-    to_visit = [base_url]
-    pages = []
-    count = 0
 
-    while to_visit and len(visited) < max_pages:
-        url = to_visit.pop(0)
-        if url in visited or not url.startswith(base_url):
+def discover_sitemap_urls(base_url, limit=2000):
+    """Best-effort sitemap.xml discovery (handles one level of sitemap index)."""
+    found = []
+    queue = [urljoin(base_url, "/sitemap.xml")]
+    seen_sitemaps = set()
+    while queue and len(found) < limit:
+        sm_url = queue.pop(0)
+        if sm_url in seen_sitemaps:
             continue
-
+        seen_sitemaps.add(sm_url)
         try:
-            print(f"Crawling [{count+1}/{max_pages}]: {url}")
-            response = requests.get(url, timeout=10)
-            time.sleep(delay)  # Be nice to the server
-            
-            if response.status_code != 200:
-                print(f"  ↳ Error: HTTP {response.status_code}")
+            resp = SESSION.get(sm_url, timeout=15)
+            if resp.status_code != 200:
                 continue
-                
-            soup = BeautifulSoup(response.text, 'html.parser')
-            title = soup.title.string.strip() if soup.title else url
-            pages.append((url, title))
-            count += 1
-
-            # Find all links and add to crawl queue
-            for link in soup.find_all('a', href=True):
-                full_url = urljoin(url, link['href'])
-                # Only follow links to the same domain
-                if (base_url in full_url and 
-                    full_url not in visited and 
-                    full_url not in to_visit and
-                    not full_url.endswith(('.pdf', '.jpg', '.png', '.gif', '.zip'))):
-                    to_visit.append(full_url)
-
-            visited.add(url)
-            
-        except Exception as e:
-            print(f"  ↳ Error: {e}")
+            root = ElementTree.fromstring(resp.content)
+        except (requests.RequestException, ElementTree.ParseError):
             continue
+        ns = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+        for loc in root.findall(".//sm:sitemap/sm:loc", ns):
+            if loc.text:
+                queue.append(loc.text.strip())
+        for loc in root.findall(".//sm:url/sm:loc", ns):
+            if loc.text:
+                found.append(loc.text.strip())
+    return found
+
+
+def fetch_page(url):
+    """Return (final_url, title, text) or None on failure."""
+    try:
+        resp = SESSION.get(url, timeout=15)
+    except requests.RequestException as e:
+        print(f"  ↳ Error: {e}")
+        return None
+    if resp.status_code != 200 or "html" not in resp.headers.get("Content-Type", ""):
+        return None
+    soup = BeautifulSoup(resp.text, "html.parser")
+    title = soup.title.string.strip() if soup.title and soup.title.string else url
+    return resp.url, re.sub(r"\s+", " ", title), soup
+
+
+def extract_links(soup, page_url):
+    for link in soup.find_all("a", href=True):
+        yield normalize_url(urljoin(page_url, link["href"]))
+
+
+def extract_text(soup, max_chars=4000):
+    """Lightweight HTML -> markdown-ish text for llms-full.txt."""
+    for tag in soup(["script", "style", "noscript", "nav", "header", "footer",
+                     "aside", "form", "svg"]):
+        tag.decompose()
+    main = soup.find("main") or soup.find("article") or soup.body or soup
+    chunks = []
+    for el in main.find_all(["h1", "h2", "h3", "h4", "p", "li"]):
+        text = re.sub(r"\s+", " ", el.get_text(" ", strip=True)).strip()
+        if not text:
+            continue
+        name = el.name
+        if name in ("h1", "h2"):
+            chunks.append(f"\n### {text}")
+        elif name in ("h3", "h4"):
+            chunks.append(f"\n**{text}**")
+        elif name == "li":
+            chunks.append(f"- {text}")
+        else:
+            chunks.append(text)
+    out = "\n".join(chunks).strip()
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    if len(out) > max_chars:
+        out = out[:max_chars].rsplit(" ", 1)[0] + " […]"
+    return out
+
+
+def crawl_site(base_url, max_pages=150, delay=0.2, want_text=False,
+               respect_robots=True):
+    base_url = normalize_url(base_url)
+    print(f"Starting crawl of {base_url} (max: {max_pages} pages)")
+
+    rp = load_robots(base_url) if respect_robots else None
+
+    def allowed(url):
+        return rp is None or rp.can_fetch(USER_AGENT, url)
+
+    seeds = discover_sitemap_urls(base_url)
+    seeds = [u for u in (normalize_url(s) for s in seeds)
+             if in_scope(u, base_url) and looks_like_html(u) and allowed(u)]
+    if seeds:
+        print(f"  Seeded {len(seeds)} URLs from sitemap.xml")
+
+    to_visit = [base_url] + seeds
+    visited = set()
+    pages = []  # list of dicts: {url, title, text}
+
+    while to_visit and len(pages) < max_pages:
+        url = to_visit.pop(0)
+        if url in visited:
+            continue
+        visited.add(url)
+        if not (in_scope(url, base_url) and looks_like_html(url) and allowed(url)):
+            continue
+
+        print(f"Crawling [{len(pages) + 1}/{max_pages}]: {url}")
+        result = fetch_page(url)
+        time.sleep(delay)
+        if not result:
+            continue
+        final_url, title, soup = result
+        final_url = normalize_url(final_url)
+        if final_url in visited and final_url != url:
+            continue
+        visited.add(final_url)
+
+        record = {"url": final_url, "title": title}
+        if want_text:
+            record["text"] = extract_text(soup)
+        pages.append(record)
+
+        for link in extract_links(soup, final_url):
+            if link not in visited and link not in to_visit:
+                to_visit.append(link)
 
     print(f"Crawl complete. Found {len(pages)} pages.")
     return pages
 
-def group_and_format(pages, site_name, base_url):
-    """
-    Group pages by URL path section and format as llms.txt spec-compliant markdown.
-    Spec: H1 title, blockquote summary, H2 sections, - [Title](url): description links.
-    """
+
+# ---------------------------------------------------------------------------
+# Formatting
+# ---------------------------------------------------------------------------
+
+def section_label(slug):
+    return slug.replace("-", " ").replace("_", " ").title() if slug else "Home"
+
+
+def group_by_section(pages, base_url):
     grouped = defaultdict(list)
-    for url, title in pages:
-        path = urlparse(url).path
-        parts = path.strip("/").split("/")
-        top_section = parts[0] if parts and parts[0] else "Home"
-        grouped[top_section].append((title, url))
+    base_prefix = urlparse(normalize_url(base_url)).path.rstrip("/")
+    for page in pages:
+        path = urlparse(page["url"]).path
+        if base_prefix and path.startswith(base_prefix):
+            path = path[len(base_prefix):]
+        parts = [p for p in path.strip("/").split("/") if p]
+        grouped[parts[0] if parts else ""].append(page)
+    sections = sorted(grouped, key=lambda s: (s != "", s))  # "" (Home) first
+    return [(s, grouped[s]) for s in sections]
 
-    # Pretty-print section names: "undergraduate-hub" -> "Undergraduate Hub"
-    def section_label(slug):
-        return slug.replace("-", " ").replace("_", " ").title()
 
-    output = f"# {site_name}\n\n"
-    output += f"> Site map of {site_name} ({base_url}), auto-generated for LLM context.\n\n"
+def build_index(pages, site_name, base_url):
+    """Spec-compliant llms.txt: H1, blockquote, H2 sections of links."""
+    out = [f"# {site_name}", ""]
+    out.append(f"> Site map of {site_name} ({base_url}), auto-generated for LLM context.")
+    out.append("")
+    for slug, items in group_by_section(pages, base_url):
+        out.append(f"## {section_label(slug)}")
+        out.append("")
+        for page in sorted(items, key=lambda p: len(p["url"])):
+            out.append(f"- [{page['title']}]({page['url']})")
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"
 
-    # Sort sections alphabetically but put Home first
-    sections = sorted(grouped.keys())
-    if "Home" in sections:
-        sections.remove("Home")
-        sections = ["Home"] + sections
 
-    for section in sections:
-        output += f"## {section_label(section)}\n\n"
-        # Sort links by URL length (shorter = higher-level pages first)
-        links = sorted(grouped[section], key=lambda x: len(x[1]))
-        for title, url in links:
-            clean_title = re.sub(r'\s+', ' ', title)
-            output += f"- [{clean_title}]({url})\n"
-        output += "\n"
+def build_full(pages, site_name, base_url):
+    """llms-full.txt: page content grouped by section."""
+    today = datetime.date.today().isoformat()
+    out = [f"# {site_name}", ""]
+    out.append(f"> Full content export of {site_name} ({base_url}), generated {today}.")
+    out.append("")
+    for slug, items in group_by_section(pages, base_url):
+        out.append(f"## {section_label(slug)}")
+        out.append("")
+        for page in sorted(items, key=lambda p: len(p["url"])):
+            out.append(f"### {page['title']}")
+            out.append(f"Source: {page['url']}")
+            out.append("")
+            out.append(page.get("text", "").strip() or "_(no extractable text)_")
+            out.append("")
+    return "\n".join(out).rstrip() + "\n"
 
-    return output
 
-def enhance_site_map(basic_map, site_name, api_key):
-    """
-    Use Gemini API to enhance the basic site map into llms.txt spec format.
-    """
-    print("Enhancing site map with Gemini API...")
+# ---------------------------------------------------------------------------
+# Gemini enhancement (optional)
+# ---------------------------------------------------------------------------
 
-    custom_prompt = f"""You are generating an llms.txt file following the official spec (llmstxt.org).
+def get_gemini_api_key():
+    api_key = os.environ.get("GOOGLE_API_KEY")
+    if not api_key:
+        api_key = input("Enter your Google API key (or set GOOGLE_API_KEY): ").strip()
+    return api_key
+
+
+def call_gemini(prompt, api_key, model="gemini-2.0-flash"):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    data = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.2, "topK": 40, "topP": 0.95,
+                             "maxOutputTokens": 8192},
+    }
+    resp = requests.post(f"{url}?key={api_key}",
+                         headers={"Content-Type": "application/json"},
+                         data=json.dumps(data), timeout=60)
+    if resp.status_code != 200:
+        print(f"Error calling Gemini API: {resp.status_code}\n{resp.text}")
+        return None
+    try:
+        return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError) as e:
+        print(f"Error parsing Gemini response: {e}")
+        return None
+
+
+def strip_code_fences(text):
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        lines = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+        text = "\n".join(lines).strip()
+    return text + "\n"
+
+
+def enhance_index(basic_index, site_name, api_key, model="gemini-2.0-flash"):
+    print("Enhancing index with Gemini API...")
+    prompt = f"""You are generating an llms.txt file following the official spec (llmstxt.org).
 
 Given this raw site map of {site_name}, produce a spec-compliant llms.txt file.
 
@@ -182,7 +322,7 @@ STRICT FORMAT RULES — follow these exactly:
 5. Inside each ## section: a markdown list where each item is:
    - [Page Title](https://full-url): Brief description of what this page contains
 6. Include a ## Optional section at the end for lower-priority pages
-7. Output ONLY the raw markdown. No code fences, no ```markdown blocks, no JSON metadata
+7. Output ONLY the raw markdown. No code fences, no JSON metadata
 
 CONTENT RULES:
 - Preserve ALL original URLs exactly as given
@@ -193,81 +333,77 @@ CONTENT RULES:
 
 Here's the raw site map to enhance:
 
-{basic_map}"""
+{basic_index}"""
+    result = call_gemini(prompt, api_key, model=model)
+    return strip_code_fences(result) if result else None
 
-    enhanced_map = enhance_with_gemini(basic_map, api_key, custom_prompt)
-    if enhanced_map:
-        # Strip code fences if Gemini wraps output despite instructions
-        enhanced_map = enhanced_map.strip()
-        if enhanced_map.startswith("```"):
-            lines = enhanced_map.split("\n")
-            # Remove first line (```markdown) and last line (```)
-            if lines[-1].strip() == "```":
-                lines = lines[1:-1]
-            else:
-                lines = lines[1:]
-            enhanced_map = "\n".join(lines).strip()
-    return enhanced_map
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
         description="Generate llms.txt files following the llmstxt.org spec")
-    parser.add_argument("url", type=str, nargs="?", help="Website URL to crawl",
-                        default="https://giesbusiness.illinois.edu")
-    parser.add_argument("--name", type=str, help="Site name for the H1 title",
-                        default="Website")
-    parser.add_argument("--max-pages", type=int, help="Maximum pages to crawl",
-                        default=150)
-    parser.add_argument("--delay", type=float, help="Delay between requests (seconds)",
-                        default=0.2)
+    parser.add_argument("url", nargs="?", default="https://giesbusiness.illinois.edu",
+                        help="Website URL to crawl")
+    parser.add_argument("--name", default=None, help="Site name for the H1 title")
+    parser.add_argument("--max-pages", type=int, default=150,
+                        help="Maximum pages to crawl")
+    parser.add_argument("--delay", type=float, default=0.2,
+                        help="Delay between requests (seconds)")
+    parser.add_argument("--output-dir", default=".", help="Directory for output files")
     parser.add_argument("--skip-enhance", action="store_true",
-                        help="Skip the Gemini enhancement step (basic spec-compliant output only)")
+                        help="Skip the Gemini enhancement step")
     parser.add_argument("--full", action="store_true",
-                        help="Also generate llms-full.txt with higher page limit")
+                        help="Also generate llms-full.txt with extracted page content")
+    parser.add_argument("--gemini-model", default="gemini-2.0-flash",
+                        help="Gemini model for enhancement")
+    parser.add_argument("--ignore-robots", action="store_true",
+                        help="Do not honor robots.txt (use responsibly)")
     args = parser.parse_args()
 
-    # Extract domain name from URL for site name if not provided
-    if args.name == "Website":
-        domain = urlparse(args.url).netloc
-        args.name = domain.split(".")[-2].capitalize() if len(domain.split(".")) > 1 else domain
+    name = args.name
+    if not name:
+        netloc = urlparse(args.url).netloc
+        bits = netloc.split(".")
+        name = (bits[-2] if len(bits) > 1 else netloc).capitalize()
 
-    # Crawl the site
-    pages = crawl_site(args.url, max_pages=args.max_pages, delay=args.delay)
+    os.makedirs(args.output_dir, exist_ok=True)
+    index_path = os.path.join(args.output_dir, "llms.txt")
+    full_path = os.path.join(args.output_dir, "llms-full.txt")
 
-    # Format the basic site map (now spec-compliant)
-    basic_map = group_and_format(pages, args.name, args.url)
+    pages = crawl_site(args.url, max_pages=args.max_pages, delay=args.delay,
+                       want_text=args.full, respect_robots=not args.ignore_robots)
+    if not pages:
+        print("No pages crawled — check the URL, robots.txt, or network.")
+        return
 
-    if args.skip_enhance:
-        with open("llms.txt", "w", encoding="utf-8") as f:
-            f.write(basic_map)
-        print(f"✅ Basic llms.txt saved ({len(pages)} pages)")
-    else:
-        print(f"✅ Crawled {len(pages)} pages, sending to Gemini for enhancement...")
+    basic_index = build_index(pages, name, args.url)
+
+    index_text = basic_index
+    if not args.skip_enhance:
         try:
             api_key = get_gemini_api_key()
-            enhanced_map = enhance_site_map(basic_map, args.name, api_key)
+            if api_key:
+                enhanced = enhance_index(basic_index, name, api_key,
+                                         model=args.gemini_model)
+                if enhanced:
+                    index_text = enhanced
+                else:
+                    print("⚠️ Enhancement failed; writing basic index instead")
+        except Exception as e:  # noqa: BLE001 - keep the basic output on any failure
+            print(f"⚠️ Enhancement error ({e}); writing basic index instead")
 
-            if enhanced_map:
-                with open("llms.txt", "w", encoding="utf-8") as f:
-                    f.write(enhanced_map)
-                print("✅ Enhanced llms.txt saved")
-            else:
-                # Fall back to basic map on API failure
-                with open("llms.txt", "w", encoding="utf-8") as f:
-                    f.write(basic_map)
-                print("⚠️ Enhancement failed, saved basic llms.txt instead")
-        except Exception as e:
-            print(f"Error during enhancement: {e}")
-            with open("llms.txt", "w", encoding="utf-8") as f:
-                f.write(basic_map)
-            print("⚠️ Enhancement failed, saved basic llms.txt instead")
+    with open(index_path, "w", encoding="utf-8") as f:
+        f.write(index_text)
+    print(f"✅ Wrote {index_path} ({len(pages)} pages)")
 
-    # Generate llms-full.txt with all crawled pages (no truncation)
     if args.full:
-        full_map = group_and_format(pages, args.name, args.url)
-        with open("llms-full.txt", "w", encoding="utf-8") as f:
-            f.write(full_map)
-        print("✅ llms-full.txt saved (comprehensive version)")
-    
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(build_full(pages, name, args.url))
+        print(f"✅ Wrote {full_path} (page content for {len(pages)} pages)")
+
+
 if __name__ == "__main__":
     main()
