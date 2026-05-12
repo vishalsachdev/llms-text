@@ -165,4 +165,8 @@ Anthropic, Cloudflare, Stripe, Vercel, Supabase, Shopify, NVIDIA, and 844,000+ o
 
 ## Maintenance
 
-Regenerate quarterly or after significant website changes. The generator script handles the crawl-and-enhance cycle automatically.
+Regenerate quarterly or after significant website changes. The generator script handles the crawl-and-enhance cycle automatically. CI (`.github/workflows/ci.yml`) compile-checks the scripts and runs `validate.py` on every push and pull request.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
